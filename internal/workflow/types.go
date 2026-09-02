@@ -9,16 +9,16 @@ import (
 )
 
 const (
-	DecisionAllow = "ALLOW"
+	DecisionAllow           = "ALLOW"
 	DecisionRequireApproval = "REQUIRE_APPROVAL"
-	DecisionDeny = "DENY"
+	DecisionDeny            = "DENY"
 )
 
 const (
-	CategorySales = "sales"
+	CategorySales   = "sales"
 	CategorySupport = "support"
-	CategorySpam = "spam"
-	CategoryOther = "other"
+	CategorySpam    = "spam"
+	CategoryOther   = "other"
 	CategoryUnknown = "unknown"
 )
 
@@ -34,13 +34,13 @@ var ErrWorkflowFailure = errors.New("workflow provider failure")
 
 // Inquiry is the normalized request from an external channel.
 type Inquiry struct {
-	ID               string
-	Source           string
+	ID                string
+	Source            string
 	ExternalMessageID string
-	SenderEmail      string
-	Subject          string
-	Content          string
-	ReceivedAt       time.Time
+	SenderEmail       string
+	Subject           string
+	Content           string
+	ReceivedAt        time.Time
 }
 
 // Classification is the model's constrained categorization.
@@ -60,11 +60,11 @@ type Extraction struct {
 
 // CRMMatch captures deterministic identity resolution.
 type CRMMatch struct {
-	MatchFound bool
-	RecordID   string
-	Confidence float64
+	MatchFound     bool
+	RecordID       string
+	Confidence     float64
 	RequiresReview bool
-	MatchType  string
+	MatchType      string
 }
 
 // ActionProposal describes the proposed action, including risk.
@@ -95,15 +95,17 @@ type AuditEvent struct {
 
 // WorkflowResult packages a processed inquiry and all derived artifacts.
 type WorkflowResult struct {
-	ID                 string
-	Inquiry            Inquiry
-	Classification     Classification
-	Extraction         Extraction
-	CRMMatch           CRMMatch
-	ProposedAction     ActionProposal
-	PolicyDecision     PolicyDecision
-	AuditTrail         []AuditEvent
-	Duplicate          bool
+	ID             string
+	Inquiry        Inquiry
+	Classification Classification
+	Extraction     Extraction
+	CRMMatch       CRMMatch
+	ProposedAction ActionProposal
+	ActionID       string
+	ActionState    ActionState
+	PolicyDecision PolicyDecision
+	AuditTrail     []AuditEvent
+	Duplicate      bool
 }
 
 // LLMProvider defines the contract for AI classification/extraction.

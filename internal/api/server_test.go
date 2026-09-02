@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -132,6 +133,90 @@ func TestAPIWorkflowFailureIsReturnedSafely(t *testing.T) {
 	}
 	if strings.Contains(res.Body.String(), "panic") || strings.Contains(res.Body.String(), "stack") {
 		t.Fatal("error response must not leak internal implementation details")
+	}
+}
+
+func TestHTTPRoutingReachabilityForInquiryApprovalAndRejection(t *testing.T) {
+	service := workflow.NewWorkflowService(workflow.MockLLMProvider{}, workflow.MockCRMProvider{})
+	handler := NewServer(service)
+	mux := http.NewServeMux()
+	mux.Handle("/api/v1/inquiries", handler)
+	mux.Handle("/api/v1/actions/", handler)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	createInquiry := func(content string, messageID string) inquiryResponse {
+		payload := `{"source":"email","external_message_id":"` + messageID + `","sender":{"email":"marketing@client.com","name":"Customer"},"subject":"Promotional outreach","content":"` + content + `"}`
+		res, err := http.Post(ts.URL+"/api/v1/inquiries", "application/json", strings.NewReader(payload))
+		if err != nil {
+			t.Fatalf("POST /api/v1/inquiries failed: %v", err)
+		}
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil {
+			t.Fatalf("read inquiry response body: %v", err)
+		}
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("expected inquiry POST to return 200, got %d body=%s", res.StatusCode, string(body))
+		}
+		var resp inquiryResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("decode inquiry response: %v", err)
+		}
+		return resp
+	}
+
+	approvalInquiry := createInquiry("Please send a promotional message to our customer list.", "msg-approval-routing")
+	if approvalInquiry.ActionID == "" {
+		t.Fatal("expected inquiry response to include action id")
+	}
+	if approvalInquiry.PolicyDecision.Decision != workflow.DecisionRequireApproval {
+		t.Fatalf("expected approval-required action, got %s", approvalInquiry.PolicyDecision.Decision)
+	}
+
+	approveRes, err := http.Post(ts.URL+"/api/v1/actions/"+approvalInquiry.ActionID+"/approve", "application/json", strings.NewReader(`{"approver_id":"human-reviewer"}`))
+	if err != nil {
+		t.Fatalf("POST approval route failed: %v", err)
+	}
+	approveBody, err := io.ReadAll(approveRes.Body)
+	approveRes.Body.Close()
+	if err != nil {
+		t.Fatalf("read approval response body: %v", err)
+	}
+	if approveRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected approval route to return 200, got %d body=%s", approveRes.StatusCode, string(approveBody))
+	}
+	var approveResp actionDecisionResponse
+	if err := json.Unmarshal(approveBody, &approveResp); err != nil {
+		t.Fatalf("decode approval response: %v", err)
+	}
+	if approveResp.State != "APPROVED" {
+		t.Fatalf("expected approved state, got %q", approveResp.State)
+	}
+
+	rejectInquiry := createInquiry("Please send a promotional message to our customer list.", "msg-reject-routing")
+	if rejectInquiry.ActionID == "" {
+		t.Fatal("expected rejection inquiry to include action id")
+	}
+
+	rejectRes, err := http.Post(ts.URL+"/api/v1/actions/"+rejectInquiry.ActionID+"/reject", "application/json", strings.NewReader(`{"approver_id":"human-reviewer","reason":"not approved"}`))
+	if err != nil {
+		t.Fatalf("POST rejection route failed: %v", err)
+	}
+	rejectBody, err := io.ReadAll(rejectRes.Body)
+	rejectRes.Body.Close()
+	if err != nil {
+		t.Fatalf("read rejection response body: %v", err)
+	}
+	if rejectRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected rejection route to return 200, got %d body=%s", rejectRes.StatusCode, string(rejectBody))
+	}
+	var rejectResp actionDecisionResponse
+	if err := json.Unmarshal(rejectBody, &rejectResp); err != nil {
+		t.Fatalf("decode rejection response: %v", err)
+	}
+	if rejectResp.State != "REJECTED" {
+		t.Fatalf("expected rejected state, got %q", rejectResp.State)
 	}
 }
 

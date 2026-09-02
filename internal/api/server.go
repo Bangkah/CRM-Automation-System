@@ -25,21 +25,23 @@ func NewServer(service *workflow.WorkflowService) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
+	if r.Method == http.MethodPost && r.URL.Path == routeInquiries {
+		s.handleCreateInquiry(w, r)
 		return
 	}
-	if r.URL.Path != routeInquiries {
-		writeError(w, http.StatusNotFound, "not_found", "route not found")
+	if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/actions/") {
+		s.handleActionDecision(w, r)
 		return
 	}
+	writeError(w, http.StatusNotFound, "not_found", "route not found")
+}
 
+func (s *Server) handleCreateInquiry(w http.ResponseWriter, r *http.Request) {
 	var req inquiryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "malformed_json", "request body must be valid JSON")
 		return
 	}
-
 	if err := validateRequest(req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -63,6 +65,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, inquiryResponse{
 		ID:                result.ID,
+		ActionID:          result.ActionID,
 		Source:            result.Inquiry.Source,
 		ExternalMessageID: result.Inquiry.ExternalMessageID,
 		Duplicate:         result.Duplicate,
@@ -74,12 +77,58 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleActionDecision(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/v1/actions/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) != 2 {
+		writeError(w, http.StatusNotFound, "not_found", "route not found")
+		return
+	}
+	actionID := parts[0]
+	actionVerb := parts[1]
+	if actionID == "" || (actionVerb != "approve" && actionVerb != "reject") {
+		writeError(w, http.StatusBadRequest, "invalid_action_route", "route must be /api/v1/actions/{id}/approve or /reject")
+		return
+	}
+
+	var req actionDecisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "malformed_json", "request body must be valid JSON")
+		return
+	}
+
+	if actionVerb == "approve" {
+		updated, err := s.service.ApproveAction(r.Context(), actionID, req.ApproverID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "approval_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, actionDecisionResponse{
+			ActionID: updated.ID,
+			State:    string(updated.State),
+			Decision: workflow.DecisionAllow,
+		})
+		return
+	}
+
+	updated, err := s.service.RejectAction(r.Context(), actionID, req.ApproverID, req.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "rejection_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, actionDecisionResponse{
+		ActionID: updated.ID,
+		State:    string(updated.State),
+		Decision: workflow.DecisionDeny,
+	})
+}
+
 type inquiryRequest struct {
-	Source           string `json:"source"`
+	Source            string `json:"source"`
 	ExternalMessageID string `json:"external_message_id"`
-	Sender           sender `json:"sender"`
-	Subject          string `json:"subject"`
-	Content          string `json:"content"`
+	Sender            sender `json:"sender"`
+	Subject           string `json:"subject"`
+	Content           string `json:"content"`
 }
 
 type sender struct {
@@ -88,15 +137,27 @@ type sender struct {
 }
 
 type inquiryResponse struct {
-	ID                string            `json:"id"`
-	Source            string            `json:"source"`
-	ExternalMessageID string            `json:"external_message_id"`
-	Duplicate         bool              `json:"duplicate"`
+	ID                string                  `json:"id"`
+	ActionID          string                  `json:"action_id"`
+	Source            string                  `json:"source"`
+	ExternalMessageID string                  `json:"external_message_id"`
+	Duplicate         bool                    `json:"duplicate"`
 	Classification    workflow.Classification `json:"classification"`
 	Extraction        workflow.Extraction     `json:"extraction"`
 	PolicyDecision    workflow.PolicyDecision `json:"policy_decision"`
 	Action            workflow.ActionProposal `json:"action"`
-	AuditTrail        []workflow.AuditEvent  `json:"audit_trail"`
+	AuditTrail        []workflow.AuditEvent   `json:"audit_trail"`
+}
+
+type actionDecisionRequest struct {
+	ApproverID string `json:"approver_id"`
+	Reason     string `json:"reason"`
+}
+
+type actionDecisionResponse struct {
+	ActionID string `json:"action_id"`
+	State    string `json:"state"`
+	Decision string `json:"decision"`
 }
 
 type errorResponse struct {

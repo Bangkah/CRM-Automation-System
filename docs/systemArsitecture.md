@@ -26,6 +26,30 @@ Tetapi LLM **tidak boleh langsung**:
 
 Semua tindakan melewati **Policy & Action Layer**.
 
+## 1.1 Proposal vs approval vs execution
+
+Penting untuk membedakan tiga fase yang berbeda:
+
+```text
+AI Proposal
+    ↓
+Action Policy
+    ↓
+PENDING_APPROVAL (jika diperlukan)
+    ↓
+APPROVED / REJECTED
+    ↓
+EXECUTED
+```
+
+Tidak ada status yang mengizinkan model secara langsung melakukan eksekusi.
+
+* Proposal = rekomendasi dari AI atau pipeline.
+* Approval = keputusan manusia untuk tindakan yang berisiko atau penting.
+* Execution = tindakan deterministik yang hanya dijalankan setelah kebijakan dan persetujuan terpenuhi.
+
+Aksi yang berisiko seperti komunikasi eksternal harus selalu menunggu persetujuan manusia sebelum eksekusi.
+
 ---
 
 # 2. Arsitektur tingkat tinggi
