@@ -1,263 +1,160 @@
-# BEDA AI Intake System
+# BEDA AI Technical Assessment
+## AI Inquiry Processing & CRM Workflow
 
-### Technical Assessment — AI Inquiry Processing & CRM Workflow
+### 1. Architecture
 
-**Author:** Muhammad Dhiyaul Atha
-**Date:** 1 September 2026
-**Scope:** Practical AI Systems / Automation / Internal Infrastructure
+This repository implements the core vertical slice for the BEDA assessment: an incoming business inquiry is ingested, normalized, classified, extracted, validated, matched against a CRM-like identity source, evaluated by a deterministic policy engine, optionally approved by a human, and then executed with audit logging.
 
----
+```mermaid
+flowchart TD
+    A[Inquiry Sources] --> B[Ingestion API]
+    B --> C[Normalize & Validate]
+    C --> D[AI Analysis]
+    D --> E[Deterministic Validation]
+    E --> F[CRM Resolution]
+    F --> G[Policy Engine]
+    G --> H[Action Proposal]
+    H --> I{Approval Required?}
+    I -->|No| J[Execute]
+    I -->|Yes| K[Human Approval]
+    K --> J
+    J --> L[Audit Log]
+```
 
-## 1. Problem
+The assessment prototype uses a thin API layer, a workflow service, mock LLM and CRM providers, and explicit approval state transitions. The key engineering boundary is that the application itself remains the authority for execution and policy, while the model is used only to recommend.
 
-BEDA menerima inquiry dari beberapa channel:
+### 2. Model and Tool Choices
+
+A practical production strategy would be:
+
+- smaller or cheaper LLM for classification and extraction
+- stronger model only for complex reasoning or research when necessary
+- structured JSON output with strict schema validation
+- deterministic application code for validation, duplicate detection, confidence checks, policy, approval, idempotency, and audit
+- provider abstraction so the LLM or CRM implementation can be swapped without changing the workflow
+
+This repository deliberately does not integrate a production model or CRM; instead it uses mock providers to demonstrate the architecture and safety boundaries clearly.
+
+### 3. LLM/Agent vs Deterministic Code
+
+| LLM / Agent responsibility | Deterministic application responsibility |
+| --- | --- |
+| classify inquiry | schema validation |
+| extract structured fields | confidence thresholds |
+| summarize context | duplicate detection |
+| research missing information | idempotency |
+| draft responses | CRM identity resolution |
+| suggest next action | permissions and risk checks |
+| produce recommendations | policy enforcement |
+|  | approval gate |
+|  | execution |
+|  | audit trail |
+
+The key principle is simple: the LLM provides reasoning, not authority. It can suggest a lead, draft a response, or flag missing information, but the application decides whether the action is valid, allowed, and safe to execute.
+
+### 4. Failure and Edge Cases
+
+The implementation explicitly handles the common assessment edge cases:
+
+- incomplete information remains incomplete or triggers clarification rather than inventing facts
+- malformed LLM output fails closed and is rejected by validation
+- duplicate inquiries are idempotent and do not execute twice
+- ambiguous CRM matches are treated as requiring review rather than guessing
+- spam is denied by policy
+- provider or model failures are surfaced as workflow failures instead of unsafe execution
+- prompt-injection-like inquiry content is treated as content, not as an instruction
+- the system never invents missing customer information; missing data remains null/unknown or triggers follow-up
+
+### 5. Security and Permissions
+
+The safety model is intentionally conservative:
+
+- least privilege is modeled by keeping execution behind the application layer
+- provider secrets and environment-specific configuration are outside source code
+- sensitive business data is treated as business data, not as a free-form AI tool input without validation
+- approval and execution are separate states; the human reviewer must approve before a consequential action executes
+- untrusted inquiry content is not allowed to trigger external actions directly
+- prompt injection is treated as untrusted content instead of a directive
+- each workflow step generates audit events so the path of a decision is reviewable
+- the model never gets direct authority to perform consequential actions
+
+### 6. Cost and Latency
+
+This section describes a production evolution path, not the current repository implementation. The current prototype is a synchronous HTTP workflow with in-memory repositories and in-memory deduplication.
+
+A practical production approach would be:
+
+- cheap model for routine classification and extraction
+- stronger model only for ambiguous or complex cases
+- early exit for spam or known blocked paths
+- bounded retries and fail-closed behavior for provider errors
+- token limits and controlled prompt size
+- cached or deduplicated repeated inquiries
+- asynchronous processing where appropriate for non-real-time workflows
+
+This prototype does not claim production cost metrics; it demonstrates a reasonable low-complexity path without unnecessary infrastructure.
+
+### 7. Deliberately NOT Automated
+
+The repository intentionally does not automate:
+
+- Sending consequential external communications.
+
+The system may draft a response or propose an action, but a human must approve sending that communication when the action has meaningful business consequences. This is important because it prevents:
+
+- hallucinated commitments
+- incorrect pricing or promises
+- unsafe outbound messaging
+- unclear accountability
+- ambiguous customer or business context from being acted on automatically
+
+### 8. Important Implementation
+
+The prototype is aligned to the actual code path:
 
 ```text
-Email
-Website Forms
-Messaging
-     │
-     ▼
-┌─────────────────────┐
-│  Inquiry Intake     │
-└─────────┬───────────┘
-          │
-          ▼
-   Unstructured Input
+action = propose(...)
+
+decision = policy.evaluate(action)
+
+if decision == DENY:
+    reject(action)
+elif decision == REQUIRE_APPROVAL:
+    set_pending_approval(action)
+else:
+    execute(action)
 ```
 
-Informasi yang masuk dapat berupa:
-
-* sales opportunity;
-* support request;
-* spam;
-* incomplete inquiry;
-* duplicate messages;
-* ambiguous customer identity.
-
-Sistem yang saya rancang bertujuan mengubah input tersebut menjadi **validated, actionable, and auditable workflow**.
-
-Prinsip utamanya:
-
-> **LLM memberikan reasoning, bukan authority.**
-
----
-
-# 2. Architecture
+Approval flow used by the implementation:
 
 ```text
-                 ┌──────────────────┐
- Email ─────────►│                  │
- Website ───────►│  Intake API      │
- Messaging ─────►│                  │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │   PostgreSQL     │
-                 │ Inquiry + Jobs   │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │   AI Worker      │
-                 │                  │
-                 │ Classification   │
-                 │ Extraction       │
-                 │ Research         │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │    Validator     │
-                 │ Schema + Rules   │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │   CRM Resolver   │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │  Policy Engine   │
-                 └────────┬─────────┘
-                          │
-              ┌───────────┴───────────┐
-              ▼                       ▼
-       Low-risk action          High-risk action
-              │                       │
-              │                 Human Approval
-              │                       │
-              └───────────┬───────────┘
-                          ▼
-                 ┌──────────────────┐
-                 │ Action Executor  │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                       CRM / Email
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │   Audit Trail    │
-                 └──────────────────┘
+approve(action):
+    require action.status == PENDING_APPROVAL
+    action.status = APPROVED
+    return action
+
+execute(action):
+    require action.status == APPROVED
+    perform side effect
 ```
 
-### Design principle
+This keeps model-generated recommendations separate from the actual execution authority inside the application. Approval changes the action to `APPROVED`, and execution is a later, separate controlled transition.
 
-Saya sengaja memisahkan:
+### 9. Trade-offs and Production Evolution
 
-**probabilistic reasoning**
+The current prototype is intentionally small and honest. In production, this would likely evolve to include:
 
-dari
+- PostgreSQL for durable workflow and audit state
+- durable event or job storage
+- real LLM adapters and model routing
+- real CRM adapters and customer resolution logic
+- authentication and RBAC for human approvers
+- queue-based asynchronous processing
+- observability and structured logging
+- secret management for provider credentials
+- retry and dead-letter handling
 
-**deterministic authority.**
-
-LLM boleh mengatakan:
-
-> “Saya yakin ini sales inquiry dengan confidence 0.94.”
-
-Tetapi LLM tidak boleh mengatakan:
-
-> “Saya sudah mengubah CRM.”
-
-Perubahan CRM tetap dilakukan oleh application code setelah melewati validation dan policy.
-
----
-
-# 3. Model & Tool Choices
-
-## Backend
-
-**Go**
-
-Saya memilih Go untuk API dan worker karena sistem membutuhkan:
-
-* concurrency;
-* timeout handling;
-* retries;
-* external API integration;
-* predictable resource usage;
-* clear service boundaries.
-
-Untuk AI-specific experimentation, Python tetap dapat digunakan sebagai service terpisah jika nantinya diperlukan.
-
----
-
-## Database
-
-**PostgreSQL**
-
-Digunakan sebagai source of truth untuk:
-
-* inquiries;
-* extracted information;
-* CRM matches;
-* action proposals;
-* approvals;
-* audit events;
-* processing jobs.
-
-Saya tidak akan menambahkan database lain tanpa kebutuhan yang jelas.
-
----
-
-## LLM
-
-Saya akan menggunakan **provider abstraction**:
-
-```go
-type LLMProvider interface {
-    Classify(ctx context.Context, input Inquiry) (Classification, error)
-    Extract(ctx context.Context, input Inquiry) (Extraction, error)
-    Draft(ctx context.Context, input DraftRequest) (Draft, error)
-}
-```
-
-Dengan demikian sistem tidak bergantung pada satu vendor/model.
-
-Model juga dipilih berdasarkan task:
-
-```text
-Simple classification
-        ↓
-Smaller / cheaper model
-
-Complex reasoning
-        ↓
-Stronger model
-```
-
----
-
-## Research
-
-Research menggunakan provider abstraction:
-
-```go
-type ResearchProvider interface {
-    Search(ctx context.Context, query string) ([]Evidence, error)
-}
-```
-
-Setiap evidence menyimpan:
-
-```text
-source
-title
-retrieved_at
-content
-```
-
-LLM menyusun informasi berdasarkan evidence, bukan menganggap knowledge model sebagai source of truth.
-
----
-
-## CRM
-
-CRM juga menggunakan adapter:
-
-```go
-type CRM interface {
-    FindContacts(ctx context.Context, query ContactQuery) ([]Contact, error)
-    CreateContact(ctx context.Context, contact Contact) (Contact, error)
-    UpdateContact(ctx context.Context, id string, patch ContactPatch) error
-}
-```
-
-MVP dapat menggunakan mock CRM sehingga workflow dapat diuji tanpa production credentials.
-
----
-
-# 4. Apa yang Menggunakan LLM?
-
-LLM digunakan untuk pekerjaan yang membutuhkan interpretasi terhadap bahasa natural.
-
-### LLM
-
-* classification;
-* extraction;
-* summarization;
-* research synthesis;
-* response drafting;
-* reasoning terhadap inquiry yang ambigu.
-
-### Deterministic code
-
-* authentication;
-* authorization;
-* schema validation;
-* confidence thresholds;
-* duplicate detection;
-* CRM identity matching;
-* policy enforcement;
-* retry;
-* idempotency;
-* action execution;
-* audit logging.
-
-Saya sengaja **tidak menggunakan LLM sebagai policy engine**.
+These are intentionally outside the assessment prototype and are not added here to keep the repository focused on the assessment objective.
 
 ---
 
@@ -349,19 +246,13 @@ source
 external_message_id
 ```
 
-Database memiliki constraint:
+Pada prototype saat ini, deduplication dilakukan di memori oleh workflow service untuk menjaga agar sistem tetap sederhana dan dapat dijalankan tanpa database durabel. Dalam produksi, penyimpanan durabel akan menerapkan:
 
 ```sql
 UNIQUE(source, external_message_id)
 ```
 
-Sehingga jika provider mengirim event dua kali:
-
-```text
-Event #1 → process
-
-Event #2 → detect duplicate → ignore
-```
+agar event duplikat dapat dicegah sebelum diproses.
 
 Untuk actions, digunakan `action_id`/idempotency key sehingga retry tidak menghasilkan mutation ganda.
 
@@ -577,9 +468,9 @@ STOP
 
 Tidak perlu melakukan research atau CRM processing.
 
-### Async processing
+### Async processing (future production architecture)
 
-API tidak menunggu seluruh AI workflow:
+Ini adalah arsitektur masa depan, bukan current implementation.
 
 ```text
 POST inquiry
@@ -591,7 +482,7 @@ queue
 202 Accepted
 ```
 
-Worker memproses secara asynchronous.
+Dalam prototype saat ini, request HTTP berjalan synchronously dan response dikembalikan langsung dari workflow dalam process. Worker async dan queue adalah evolusi di produksi, bukan fitur yang sudah implemented di repo ini.
 
 ### Bounded retries
 

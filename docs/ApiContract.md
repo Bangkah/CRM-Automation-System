@@ -6,6 +6,8 @@ Untuk MVP, kita buat API sesederhana mungkin.
 
 Menerima inquiry dari channel apa pun.
 
+> Catatan implementasi saat ini: prototype ini bersifat synchronous HTTP workflow. Request diterima, workflow diproses di memori, dan response dikembalikan langsung dengan hasil lengkap dari pipeline. Ini bukan async job queue.
+
 ### Request
 
 ```json
@@ -25,14 +27,17 @@ Menerima inquiry dari channel apa pun.
 
 ```json
 {
-  "inquiry_id": "inq_01J...",
-  "status": "accepted"
+  "id": "inq-172...",
+  "action_id": "act-...",
+  "duplicate": false,
+  "classification": { "category": "sales", "confidence": 0.95 },
+  "extraction": { "company": null, "intent": "sales_inquiry" },
+  "policy_decision": { "decision": "REQUIRE_APPROVAL" },
+  "audit_trail": []
 }
 ```
 
-Kita **tidak menunggu seluruh AI workflow selesai**.
-
-API menerima → simpan → masukkan job → return.
+Prototype saat ini menjalankan workflow secara langsung di process API, dengan repository dan deduplication berbasis memory. Batch/queue/asynchronous worker adalah evolusi produksi di masa depan, bukan fitur yang sudah diimplementasikan di repo ini.
 
 ---
 
@@ -449,7 +454,7 @@ First  → process
 Second → safely ignored
 ```
 
-Database:
+Saat ini prototype menjalankan deduplication di memori. Di storage durabel yang akan dipakai di produksi, constraint yang umum dipakai adalah:
 
 ```sql
 UNIQUE(source, external_message_id)

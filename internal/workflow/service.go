@@ -11,10 +11,11 @@ import (
 
 // WorkflowService orchestrates the inquiry pipeline with mock providers.
 type WorkflowService struct {
-	llm LLMProvider
-	crm CRMProvider
-	mu   sync.Mutex
-	seen map[string]struct{}
+	llm           LLMProvider
+	crm           CRMProvider
+	mu            sync.Mutex
+	seen          map[string]struct{}
+	actionService *ActionService
 }
 
 func NewWorkflowService(llm LLMProvider, crm CRMProvider) *WorkflowService {
@@ -24,7 +25,9 @@ func NewWorkflowService(llm LLMProvider, crm CRMProvider) *WorkflowService {
 	if crm == nil {
 		crm = MockCRMProvider{}
 	}
-	return &WorkflowService{llm: llm, crm: crm, seen: map[string]struct{}{}}
+	repo := newInMemoryActionRepository()
+	audit := newInMemoryAuditRepository()
+	return &WorkflowService{llm: llm, crm: crm, seen: map[string]struct{}{}, actionService: NewActionService(repo, audit)}
 }
 
 func (s *WorkflowService) ProcessInquiry(ctx context.Context, inquiry Inquiry) (WorkflowResult, error) {
@@ -111,16 +114,38 @@ func (s *WorkflowService) ProcessInquiry(ctx context.Context, inquiry Inquiry) (
 	}
 	result.ProposedAction = proposal
 	result.PolicyDecision = determinePolicy(classification, extraction, crmMatch, proposalType)
-	result.AuditTrail = append(result.AuditTrail, createAuditEvent(inquiry.ID, proposal.ID, "action.proposed", result.PolicyDecision.Decision, "workflow"))
+
+	action, err := s.actionService.CreateProposal(ctx, inquiry.ID, proposal.Type, proposal.Description, result.PolicyDecision.Decision, proposal.RequiresApproval, proposal.HighRisk)
+	if err != nil {
+		return WorkflowResult{}, fmt.Errorf("create action proposal: %w", err)
+	}
+	result.ActionID = action.ID
+	result.ActionState = action.State
+	result.AuditTrail = append(result.AuditTrail, createAuditEvent(inquiry.ID, action.ID, "action.proposed", result.PolicyDecision.Decision, "workflow"))
+
+	if result.PolicyDecision.Decision == DecisionDeny {
+		if action, err = s.actionService.DenyAction(ctx, action.ID, "policy"); err != nil {
+			return WorkflowResult{}, fmt.Errorf("deny action: %w", err)
+		}
+		result.ActionState = action.State
+		result.AuditTrail = append(result.AuditTrail, createAuditEvent(inquiry.ID, action.ID, "action.denied", DecisionDeny, "policy"))
+		return result, nil
+	}
 
 	if result.PolicyDecision.Decision == DecisionRequireApproval {
-		result.AuditTrail = append(result.AuditTrail, createAuditEvent(inquiry.ID, proposal.ID, "approval.requested", DecisionRequireApproval, "approval"))
+		if action, err = s.actionService.RequestApproval(ctx, action.ID, "human-reviewer"); err != nil {
+			return WorkflowResult{}, fmt.Errorf("request approval: %w", err)
+		}
+		result.ActionState = action.State
+		result.AuditTrail = append(result.AuditTrail, createAuditEvent(inquiry.ID, action.ID, "approval.requested", DecisionRequireApproval, "approval"))
+		return result, nil
 	}
 
-	if result.PolicyDecision.Decision == DecisionAllow {
-		result.AuditTrail = append(result.AuditTrail, createAuditEvent(inquiry.ID, proposal.ID, "action.executed", DecisionAllow, "workflow"))
+	if action, err = s.actionService.ExecuteAction(ctx, action.ID, inquiry.ExternalMessageID); err != nil {
+		return WorkflowResult{}, fmt.Errorf("execute action: %w", err)
 	}
-
+	result.ActionState = action.State
+	result.AuditTrail = append(result.AuditTrail, createAuditEvent(inquiry.ID, action.ID, "action.executed", DecisionAllow, "executor"))
 	return result, nil
 }
 
@@ -128,14 +153,30 @@ func (s *WorkflowService) ProcessInquiryWithDuplicateCheck(ctx context.Context, 
 	key := inquiry.Source + ":" + inquiry.ExternalMessageID
 	if _, ok := seen[key]; ok {
 		return WorkflowResult{
-			ID:        inquiry.ID,
-			Inquiry:   inquiry,
-			Duplicate: true,
+			ID:         inquiry.ID,
+			Inquiry:    inquiry,
+			Duplicate:  true,
 			AuditTrail: []AuditEvent{createAuditEvent(inquiry.ID, "", "inquiry.duplicate", "DUPLICATE", "idempotency")},
 		}, nil
 	}
 	seen[key] = struct{}{}
 	return s.ProcessInquiry(ctx, inquiry)
+}
+
+func (s *WorkflowService) ApproveAction(ctx context.Context, actionID, approverID string) (ActionRecord, error) {
+	return s.actionService.ApproveAction(ctx, actionID, approverID)
+}
+
+func (s *WorkflowService) RejectAction(ctx context.Context, actionID, approverID, reason string) (ActionRecord, error) {
+	return s.actionService.RejectAction(ctx, actionID, approverID, reason)
+}
+
+func (s *WorkflowService) ExecuteAction(ctx context.Context, actionID, idempotencyKey string) (ActionRecord, error) {
+	return s.actionService.ExecuteAction(ctx, actionID, idempotencyKey)
+}
+
+func (s *WorkflowService) DenyAction(ctx context.Context, actionID, reason string) (ActionRecord, error) {
+	return s.actionService.DenyAction(ctx, actionID, reason)
 }
 
 var _ = time.Now

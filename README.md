@@ -1,50 +1,68 @@
-# BEDA AI Internship Technical Assessment Prototype
+# BEDA AI Inquiry Processing System
 
-This repository contains a minimal Go prototype for the BEDA AI intake workflow described in the project documents. The system handles unstructured inquiry intake, classification, extraction, deterministic validation, CRM identity matching, policy evaluation, and audit logging.
+## Overview
 
-## What the prototype does
+BEDA receives unstructured business inquiries from email, web forms, and messaging channels. These may represent sales opportunities, support requests, duplicate messages, spam, or incomplete submissions.
 
-The prototype is intentionally narrow and deliberately avoids real external integrations.
+The goal is to classify and structure each inquiry, resolve customer identity where possible, determine a safe action, and maintain a clear human approval boundary for consequential decisions.
 
-It demonstrates:
+This prototype focuses on the assessment flow:
 
-- external inquiry ingestion via HTTP
-- request validation
-- workflow execution through a Go service layer
-- mock LLM classification and extraction
-- deterministic validation of model output
-- mock CRM matching
-- policy decisions for ALLOW, REQUIRE_APPROVAL, and DENY
-- idempotency for duplicate inquiries by `(source, external_message_id)`
-- audit record generation for important transitions
+intake → classification → extraction → validation → CRM resolution → policy → approval → execution → audit trail
 
-## Current limitations
+---
 
-This prototype uses:
+## Architecture
 
-- mock providers for LLM and CRM behavior
-- in-memory state for deduplication and audit records
-- no PostgreSQL persistence
-- no real external API integrations
-- no authentication or authorization layer
-- no real background worker or queue
-- no real approval workflow beyond the prototype decision boundary
+The implementation follows a thin-boundary design:
 
-## How to run
-
-```bash
-go run ./cmd/api
+```text
+HTTP/API
+  → Workflow
+  → AI Provider
+  → Validation
+  → CRM
+  → Policy
+  → Approval
+  → Executor
+  → Audit
 ```
 
-The server listens on port 8080.
+The AI provider is intentionally mocked for the assessment. The workflow layer remains deterministic where decisions matter, and the application layer owns policy and execution authority.
 
-## How to run tests
+The AI-assisted parts are classification and extraction. The deterministic parts include validation, duplicate detection, CRM matching, policy enforcement, approval state transitions, idempotent execution, and audit logging.
+
+---
+
+## Safety Principle
+
+> The model can recommend. The application decides.
+
+This is the core rule of the prototype:
+
+- The LLM is untrusted input and must not be treated as truth.
+- Deterministic validation checks schema and confidence constraints before a result is accepted.
+- Policy decides whether an action is ALLOW, REQUIRE_APPROVAL, or DENY.
+- Human approval is required for consequential actions when policy requires it.
+- Idempotency prevents duplicate processing and repeated execution.
+- Audit events preserve the workflow trail for accountability.
+
+---
+
+## Run locally
 
 ```bash
 go test ./...
+go run ./cmd/api
 ```
 
-## Example curl request
+The API listens on port 8080.
+
+---
+
+## API examples
+
+### Submit an inquiry
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/inquiries \
@@ -56,15 +74,46 @@ curl -X POST http://localhost:8080/api/v1/inquiries \
       "email": "customer@example.com",
       "name": "Customer"
     },
-    "subject": "We need support automation",
-    "content": "We want to automate our customer support process."
+    "subject": "Interested in sales automation",
+    "content": "We are a team of 20 and want to improve our sales process. Please contact us."
   }'
 ```
 
-## Security and design notes
+### Approve an action
 
-- LLM output is treated as untrusted input.
-- The HTTP layer validate only structural request correctness.
-- Policy decisions are kept deterministic and independent from the model.
-- The LLM is never allowed to directly execute business actions.
-- The current prototype is designed to be demonstrable and testable without production infrastructure.
+Use the action ID returned in the inquiry response from the previous request.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/actions/{ACTION_ID}/approve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "approver_id": "human-reviewer"
+  }'
+```
+
+Approval changes the action state to `APPROVED`. Execution is a separate, controlled transition that happens only after approval is granted.
+
+### Reject an action
+
+```bash
+curl -X POST http://localhost:8080/api/v1/actions/{ACTION_ID}/reject \
+  -H "Content-Type: application/json" \
+  -d '{
+    "approver_id": "human-reviewer",
+    "reason": "not approved"
+  }'
+```
+
+---
+
+## Prototype Limitations
+
+This is a prototype, not production infrastructure.
+
+- AI provider is mocked.
+- CRM is mocked.
+- Repositories are in-memory.
+- No production authentication or RBAC yet.
+- No durable database yet.
+- External integrations are not connected.
+- This is a demonstrable vertical slice, not a production deployment.
