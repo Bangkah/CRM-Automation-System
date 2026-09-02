@@ -2,6 +2,8 @@
 
 ## 1. Prinsip arsitektur
 
+> Catatan implementasi saat ini: repo ini adalah prototype synchronous HTTP workflow yang menggunakan in-memory repositories dan in-memory deduplication. Arsitektur di bawah ini mencakup desain produksi masa depan, bukan fitur yang sudah diimplementasikan di prototype ini.
+
 Kita jadikan ini sebagai prinsip utama:
 
 > **LLM menghasilkan intelligence; application layer memegang authority.**
@@ -562,7 +564,7 @@ research_evidence
 
 Kenapa PostgreSQL?
 
-Karena datanya relational dan kita butuh:
+Untuk production architecture yang matang, database relational dipilih karena kebutuhan:
 
 * transactions,
 * constraints,
@@ -570,17 +572,19 @@ Karena datanya relational dan kita butuh:
 * consistency,
 * JSONB untuk hasil AI yang fleksibel.
 
-Misalnya:
+Misalnya, di design produksi yang diinginkan:
 
 ```sql
 UNIQUE(source, external_message_id)
 ```
 
-Ini membantu enforcement idempotency **di level database**, bukan cuma application code.
+Ini membantu enforcement idempotency **di level database**, bukan cuma application code. Prototype saat ini belum mengimplementasikan constraint SQL; deduplication saat ini masih dijalankan di memory oleh workflow service.
 
 ---
 
-# 14. Queue
+# 14. Queue (future production architecture)
+
+Queue adalah desain produksi masa depan, bukan implementasi prototype saat ini. Current prototype menjalankan workflow synchronously melalui HTTP request dengan in-memory storage.
 
 Untuk production architecture kita bisa menggunakan queue:
 

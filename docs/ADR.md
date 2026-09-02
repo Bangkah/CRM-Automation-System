@@ -124,11 +124,13 @@ PostgreSQL menyediakan:
 * indexing;
 * reliable persistence.
 
-Khusus untuk idempotency:
+Untuk produksi, idempotency akan dipaksakan di storage durabel dengan constraint seperti:
 
 ```sql
 UNIQUE(source, external_message_id)
 ```
+
+Pada prototype saat ini, deduplicasi dijalankan di memori oleh workflow service. Jadi tidak ada klaim bahwa implementasi saat ini sudah memiliki constraint SQL di production storage.
 
 ### Consequence
 
@@ -161,11 +163,11 @@ idempotency_key
 ```text
 CRM UPDATE
      ↓
-action_id = act_123
+action_id = {ACTION_ID}
      ↓
 timeout
      ↓
-retry act_123
+retry {ACTION_ID}
 ```
 
 CRM adapter harus memastikan retry tidak menghasilkan mutation kedua.
@@ -462,18 +464,18 @@ Prinsip:
 
 ### Context
 
-Workflow membutuhkan asynchronous processing, tetapi assessment tidak membutuhkan distributed infrastructure yang kompleks.
+Workflow membutuhkan asynchronous processing di lingkungan produksi, tetapi assessment prototype tidak mengimplementasikan infra ini.
 
 ### Decision
 
-MVP menggunakan PostgreSQL-backed job queue.
+Ini adalah desain produksi masa depan, bukan current implementation prototype. Current prototype menggunakan synchronous HTTP workflow dengan in-memory repositories dan deduplication.
 
 ```text
 API
  ↓
-jobs table
+future jobs table
  ↓
-worker
+future worker
 ```
 
 Redis/SQS/etc. dapat ditambahkan ketika throughput membutuhkan dedicated queue.
@@ -486,6 +488,8 @@ Ini mengurangi infrastructure complexity sambil tetap memberikan:
 * worker processing;
 * failure state;
 * basic durability.
+
+Namun, repo saat ini tidak menyertakan queue, worker, atau job table yang aktif.
 
 ---
 

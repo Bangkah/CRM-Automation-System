@@ -80,6 +80,8 @@ The safety model is intentionally conservative:
 
 ### 6. Cost and Latency
 
+This section describes a production evolution path, not the current repository implementation. The current prototype is a synchronous HTTP workflow with in-memory repositories and in-memory deduplication.
+
 A practical production approach would be:
 
 - cheap model for routine classification and extraction
@@ -466,9 +468,9 @@ STOP
 
 Tidak perlu melakukan research atau CRM processing.
 
-### Async processing
+### Async processing (future production architecture)
 
-API tidak menunggu seluruh AI workflow:
+Ini adalah arsitektur masa depan, bukan current implementation.
 
 ```text
 POST inquiry
@@ -480,7 +482,7 @@ queue
 202 Accepted
 ```
 
-Worker memproses secara asynchronous.
+Dalam prototype saat ini, request HTTP berjalan synchronously dan response dikembalikan langsung dari workflow dalam process. Worker async dan queue adalah evolusi di produksi, bukan fitur yang sudah implemented di repo ini.
 
 ### Bounded retries
 
