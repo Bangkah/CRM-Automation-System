@@ -261,7 +261,3 @@ func createAuditEvent(inquiryID, actionID, eventType, decision, source string) A
 		Source:    source,
 	}
 }
-
-func normalizeMissingForDecision(extraction Extraction) bool {
-	return extraction.Company == nil || extraction.Timeline == nil
-}
