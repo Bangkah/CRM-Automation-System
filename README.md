@@ -2,6 +2,8 @@
 
 ## Overview
 
+![CI Status](https://github.com/Bangkah/CRM-Automation-System/actions/workflows/ci.yml/badge.svg)
+
 BEDA receives unstructured business inquiries from email, web forms, and messaging channels. These may represent sales opportunities, support requests, duplicate messages, spam, or incomplete submissions.
 
 The goal is to classify and structure each inquiry, resolve customer identity where possible, determine a safe action, and maintain a clear human approval boundary for consequential decisions.
