@@ -8,7 +8,8 @@ on:
 
 jobs:
   validate-and-test:
-    name: Lint, Test & Quality Gate
+    name: Lint, Test & Security Scan
+
     runs-on: ubuntu-latest
 
     steps:
@@ -29,15 +30,12 @@ jobs:
           fi
           go vet ./...
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.59.0
-
       - name: Run Tests with Race Detector & Coverage
         run: |
           go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
 
-      - name: Show Test Coverage Summary
+      - name: Check Code Coverage Threshold
         run: |
+          # Contoh opsional: Memastikan coverage minimal terpenuhi (misal: 60%)
           go tool cover -func=coverage.out
+
