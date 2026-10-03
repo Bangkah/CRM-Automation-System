@@ -66,6 +66,7 @@ func (s *Server) handleCreateInquiry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, inquiryResponse{
 		ID:                result.ID,
 		ActionID:          result.ActionID,
+		ActionState:       string(result.ActionState),
 		Source:            result.Inquiry.Source,
 		ExternalMessageID: result.Inquiry.ExternalMessageID,
 		Duplicate:         result.Duplicate,
@@ -139,6 +140,7 @@ type sender struct {
 type inquiryResponse struct {
 	ID                string                  `json:"id"`
 	ActionID          string                  `json:"action_id"`
+	ActionState       string                  `json:"action_state"`
 	Source            string                  `json:"source"`
 	ExternalMessageID string                  `json:"external_message_id"`
 	Duplicate         bool                    `json:"duplicate"`

@@ -58,6 +58,22 @@ go run ./cmd/api
 
 The API listens on port 8080.
 
+### Demo klasifikasi dan persetujuan manusia
+
+Dengan API tetap berjalan di terminal pertama, jalankan dari terminal kedua:
+
+```powershell
+.\scripts\demo-workflow.ps1
+```
+
+Perintah tersebut menampilkan kategori, confidence, keputusan policy, action, dan status
+secara ringkas. Untuk menyetujui atau menolak action yang baru dibuat, gunakan:
+
+```powershell
+.\scripts\demo-workflow.ps1 -Decision approve
+.\scripts\demo-workflow.ps1 -Decision reject
+```
+
 ---
 
 ## API examples

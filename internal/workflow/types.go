@@ -45,17 +45,17 @@ type Inquiry struct {
 
 // Classification is the model's constrained categorization.
 type Classification struct {
-	Category   string
-	Confidence float64
+	Category   string  `json:"category"`
+	Confidence float64 `json:"confidence"`
 }
 
 // Extraction contains structured fields for downstream processing.
 type Extraction struct {
-	Company     *string
-	TeamSize    *int
-	Timeline    *string
-	Budget      *string
-	ContactName *string
+	Company     *string `json:"company"`
+	TeamSize    *int    `json:"team_size"`
+	Timeline    *string `json:"timeline"`
+	Budget      *string `json:"budget"`
+	ContactName *string `json:"contact_name"`
 }
 
 // CRMMatch captures deterministic identity resolution.
@@ -69,28 +69,28 @@ type CRMMatch struct {
 
 // ActionProposal describes the proposed action, including risk.
 type ActionProposal struct {
-	ID               string
-	Type             string
-	Description      string
-	RequiresApproval bool
-	HighRisk         bool
+	ID               string `json:"id"`
+	Type             string `json:"type"`
+	Description      string `json:"description"`
+	RequiresApproval bool   `json:"requires_approval"`
+	HighRisk         bool   `json:"high_risk"`
 }
 
 // PolicyDecision is the deterministic outcome returned by the policy engine.
 type PolicyDecision struct {
-	Decision string
-	Reason   string
+	Decision string `json:"decision"`
+	Reason   string `json:"reason"`
 }
 
 // AuditEvent is an immutable record for important workflow transitions.
 type AuditEvent struct {
-	ID        string
-	Type      string
-	InquiryID string
-	ActionID  string
-	Decision  string
-	CreatedAt time.Time
-	Source    string
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	InquiryID string    `json:"inquiry_id"`
+	ActionID  string    `json:"action_id"`
+	Decision  string    `json:"decision"`
+	CreatedAt time.Time `json:"created_at"`
+	Source    string    `json:"source"`
 }
 
 // WorkflowResult packages a processed inquiry and all derived artifacts.
