@@ -9,6 +9,7 @@ on:
 jobs:
   validate-and-test:
     name: Lint, Test & Security Scan
+
     runs-on: ubuntu-latest
 
     steps:
@@ -37,3 +38,4 @@ jobs:
         run: |
           # Contoh opsional: Memastikan coverage minimal terpenuhi (misal: 60%)
           go tool cover -func=coverage.out
+

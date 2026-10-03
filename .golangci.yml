@@ -1,0 +1,17 @@
+run:
+  timeout: 3m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - gofmt      # Memastikan format kode sesuai standar Go
+    - govet      # Mendeteksi potensi bug atau error saat compile
+    - errcheck   # Memastikan error tidak ada yang terabaikan (ignored)
+    - staticcheck # Pemeriksaan statis mendalam untuk code smell
+    - unused     # Mendeteksi variabel, fungsi, atau struct yang tidak terpakai
+    - gosimple   # Menyederhanakan penulisan kode agar lebih idiomatik
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
